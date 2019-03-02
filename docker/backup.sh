@@ -442,7 +442,7 @@ function touchBackupFile() {
   )
 }
 
-function restoreDatabase(){
+function findBackup(){
   (
     _databaseSpec=${1}
     _fileName=${2}
@@ -455,6 +455,16 @@ function restoreDatabase(){
     else
       _fileName=$(find ${ROOT_BACKUP_DIR}* -type f -printf '%T@ %p\n' | grep ${_fileName} | sort | tail -n 1 | sed 's~^.* \(.*$\)~\1~')
     fi
+
+    echo "${_fileName}"
+  )
+}
+
+function restoreDatabase(){
+  (
+    _databaseSpec=${1}
+    _fileName=${2}
+    _fileName=$(findBackup "${_databaseSpec}" "${_fileName}")
 
     echoBlue "\nRestoring database ..."
     echo -e "\nSettings:"
@@ -487,25 +497,41 @@ function restoreDatabase(){
 
     # Drop
     psql -h "${_hostname}" -p "${_port}" -ac "DROP DATABASE \"${_database}\";"
+    _rtnCd=${?}
     echo
 
     # Create
-    psql -h "${_hostname}" -p "${_port}" -ac "CREATE DATABASE \"${_database}\";"
-    echo
+    if (( ${_rtnCd} == 0 )); then
+      psql -h "${_hostname}" -p "${_port}" -ac "CREATE DATABASE \"${_database}\";"
+      _rtnCd=${?}
+      echo
+    fi
 
     # Grant User Access
-    psql -h "${_hostname}" -p "${_port}" -ac "GRANT ALL ON DATABASE \"${_database}\" TO \"${_username}\";"
-    echo
+    if (( ${_rtnCd} == 0 )); then
+      psql -h "${_hostname}" -p "${_port}" -ac "GRANT ALL ON DATABASE \"${_database}\" TO \"${_username}\";"
+      _rtnCd=${?}
+      echo
+    fi
 
     # Restore
-    echo "Restoring from backup ..."
-    gunzip -c "${_fileName}" | psql -h "${_hostname}" -p "${_port}" -d "${_database}"
+    if (( ${_rtnCd} == 0 )); then
+      echo "Restoring from backup ..."
+      gunzip -c "${_fileName}" | psql -h "${_hostname}" -p "${_port}" -d "${_database}"
+      # Get the status code from psql specifically.  ${?} would only provide the status of the last command, psql in this case.
+      _rtnCd=${PIPESTATUS[0]}
+    fi
 
     duration=$SECONDS
     echo -e "Restore complete - Elapsed time: $(($duration/3600))h:$(($duration%3600/60))m:$(($duration%60))s"\\n
 
     # List tables
-    psql -h "${_hostname}" -p "${_port}" -d "${_database}" -c "\d"
+    if (( ${_rtnCd} == 0 )); then
+      psql -h "${_hostname}" -p "${_port}" -d "${_database}" -c "\d"
+      _rtnCd=${?}
+    fi
+
+    return ${_rtnCd}
   )
 }
 
@@ -806,6 +832,44 @@ function startLegacy(){
     done
   )
 }
+
+function validateBackup(){
+  (
+    _databaseSpec=${1}
+    _fileName=${2}
+
+    # Parse the parameters ...
+    _fileName=$(findBackup "${_databaseSpec}" "${_fileName}")
+    _databaseSpec="localhost/test_database"
+
+    # Export the database name
+    export POSTGRESQL_DATABASE=test_database
+
+    # Start a local PostgreSql instance
+    run-postgresql &
+
+    # Restore the database
+    if restoreDatabase "${_databaseSpec}" "${_fileName}"; then
+      echoGreen "Successfully verified backup; ${_fileName}"
+    else
+      echoRed "Backup verification failed; ${_fileName}"
+    fi
+
+    # List the databases
+    psql -c "\l"
+
+    # Stop the local PostgreSql instance
+    pg_ctl stop -D /var/lib/pgsql/data/userdata
+
+    # Delete the database files and configuration
+    rm -rf /var/lib/pgsql/data/userdata
+  )
+}
+
+
+
+
+
 # ======================================================================================
 
 # ======================================================================================
