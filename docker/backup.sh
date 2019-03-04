@@ -869,7 +869,7 @@ function runBackups(){
 }
 
 function startCron(){
-  echoBlue "Starting backup process ..."
+  logInfo "Starting backup server in cron mode ..."
   listSettings
   echoBlue "Starting go-crond as a forground task ...\n"
   CRON_CMD="go-crond -v --allow-unprivileged ${BACKUP_CONF}"
