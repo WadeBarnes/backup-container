@@ -896,19 +896,28 @@ function verifyBackup(){
     run-postgresql >/dev/null 2>&1 &
 
     # Wait for server to start ...
+    SECONDS=0
+    rtnCd=0
     _waitingForDB="waiting for server to start ."
     while ! pingDbServer; do
       printf "\r${_waitingForDB}"
       _waitingForDB="${_waitingForDB}."
-      sleep 1
 
       # ToDo: Need to fail if we have waited too long ...
-
+      if (( ${SECONDS} >= 30 )); then
+        echoRed "\nThe server failed to start within ${SECONDS} seconds.\n"
+        rtnCd=1
+      fi
+      sleep 1
     done
 
     # Restore the database
-    restoreDatabase -q "${_restoreDbSpec}" "${_fileName}"
-    rtnCd=${?}
+    if (( ${rtnCd} == 0 )); then
+      echo
+      echo "Restoring from backup ..."
+      restoreDatabase -q "${_restoreDbSpec}" "${_fileName}" >/dev/null
+      rtnCd=${?}
+    fi
 
     # Stop the local PostgreSql instance
     pg_ctl stop -D /var/lib/pgsql/data/userdata
