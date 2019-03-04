@@ -141,7 +141,7 @@ function logInfo(){
 function logError(){
   (
     errorMsg="${1}"
-    echoRed "[!!ERROR!!] - ${errorMsg}"
+    echoRed "[!!ERROR!!] - ${errorMsg}" >&2
     postMsgToWebhook "${ENVIRONMENT_FRIENDLY_NAME}" \
                      "${ENVIRONMENT_NAME}" \
                      "ERROR" \
@@ -625,7 +625,7 @@ function createBackupFolder(){
     if [ -z "${genOnly}" ]; then
       echo "Making backup directory ${_backupDir} ..." >&2
       if ! makeDirectory ${_backupDir}; then
-        echo $(logError "Failed to create backup directory ${_backupDir}.") >&2
+        logError "Failed to create backup directory ${_backupDir}."
         exit 1;
       fi;
     fi
@@ -814,7 +814,7 @@ function getMode(){
           _mode="${SCHEDULED_VERIFY}"
         else
           _mode="${ERROR}"
-          echoRed "Scheduled mode cannot be used without cron being installed and at least one cron tab being defined in ${BACKUP_CONF}."  >&2
+          logError "Scheduled mode cannot be used without cron being installed and at least one cron tab being defined in ${BACKUP_CONF}."
         fi
       else
         _mode="${VERIFY}"
@@ -830,7 +830,7 @@ function getMode(){
         _mode="${SCHEDULED}"
       else
         _mode="${ERROR}"
-        echoRed "Scheduled mode cannot be used without cron being installed and at least one cron tab being defined in ${BACKUP_CONF}."  >&2
+        logError "Scheduled mode cannot be used without cron being installed and at least one cron tab being defined in ${BACKUP_CONF}."
       fi
     fi
 
@@ -967,9 +967,9 @@ function verifyBackup(){
     rm -rf /var/lib/pgsql/data/userdata
 
     if (( ${rtnCd} == 0 )); then
-      echoGreen "Successfully verified backup; ${_fileName}\n"
+      logInfo "Successfully verified backup; ${_fileName}\n"
     else
-      echoRed "Backup verification failed; ${_fileName}\n"
+      logError "Backup verification failed; ${_fileName}\n"
     fi
 
     return ${rtnCd}
