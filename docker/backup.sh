@@ -474,18 +474,17 @@ function restoreDatabase(){
     _fileName=${2}
     _fileName=$(findBackup "${_databaseSpec}" "${_fileName}")
 
-    echoBlue "\nRestoring database ..."
-    echo -e "\nSettings:"
-    echo "- Database: ${_databaseSpec}"
-
-    if [ ! -z "${_fileName}" ]; then
-      echo -e "- Backup file: ${_fileName}\n"
-    else
-      echoRed "- Backup file: No backup file found or specified.  Cannot continue with the restore.\n"
-      exit 0
-    fi
-    
     if [ -z "${_quiet}" ]; then
+      echoBlue "\nRestoring database ..."
+      echo -e "\nSettings:"
+      echo "- Database: ${_databaseSpec}"
+
+      if [ ! -z "${_fileName}" ]; then
+        echo -e "- Backup file: ${_fileName}\n"
+      else
+        echoRed "- Backup file: No backup file found or specified.  Cannot continue with the restore.\n"
+        exit 0
+      fi    
       waitForAnyKey
     fi
 
@@ -494,7 +493,6 @@ function restoreDatabase(){
     _database=$(getDatabaseName ${_databaseSpec})
     _username=$(getUsername ${_databaseSpec})
     _password=$(getPassword ${_databaseSpec})
-
 
     if [ -z "${_quiet}" ]; then
       # Ask for the Admin Password for the database
@@ -900,17 +898,14 @@ function verifyBackup(){
     # Wait for server to start ...
     _waitingForDB="waiting for server to start ."
     while ! chechDb; do
-      printf ${_waitingForDB}
+      printf "${_waitingForDB}\r"
       _waitingForDB="${_waitingForDB}."
       sleep 1
     done
 
     # Restore the database
-    if restoreDatabase -q "${_restoreDbSpec}" "${_fileName}"; then
-      echoGreen "Successfully verified backup; ${_fileName}\n"
-    else
-      echoRed "Backup verification failed; ${_fileName}\n"
-    fi
+    restoreDatabase -q "${_restoreDbSpec}" "${_fileName}"
+    rtnCd=${?}
 
     # Stop the local PostgreSql instance
     pg_ctl stop -D /var/lib/pgsql/data/userdata
@@ -918,6 +913,14 @@ function verifyBackup(){
     # Delete the database files and configuration
     echo -e "Cleaning up ...\n"
     rm -rf /var/lib/pgsql/data/userdata
+
+    if (( ${rtnCd} == 0 )); then
+      echoGreen "Successfully verified backup; ${_fileName}\n"
+    else
+      echoRed "Backup verification failed; ${_fileName}\n"
+    fi
+
+    return ${rtnCd}
   )
 }
 # ======================================================================================
