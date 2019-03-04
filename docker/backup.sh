@@ -240,7 +240,15 @@ function getHostPasswordParam(){
 
 function readConf(){
   (
-    readCron=${1}
+    local OPTIND
+    local readCron
+    unset readCron
+    while getopts c FLAG; do
+      case $FLAG in
+        c ) readCron=1 ;;
+      esac
+    done
+    shift $((OPTIND-1))
 
     # Remove all comments and any blank lines
     filters="/^[[:blank:]]*$/d;/^[[:blank:]]*#/d;/#.*/d;"
@@ -463,9 +471,11 @@ function findBackup(){
 function restoreDatabase(){
   (
     local OPTIND
+    local quiet
+    unset quiet
     while getopts q FLAG; do
       case $FLAG in
-        q ) _quiet=1 ;;
+        q ) quiet=1 ;;
       esac
     done
     shift $((OPTIND-1))
@@ -474,7 +484,7 @@ function restoreDatabase(){
     _fileName=${2}
     _fileName=$(findBackup "${_databaseSpec}" "${_fileName}")
 
-    if [ -z "${_quiet}" ]; then
+    if [ -z "${quiet}" ]; then
       echoBlue "\nRestoring database ..."
       echo -e "\nSettings:"
       echo "- Database: ${_databaseSpec}"
@@ -494,7 +504,7 @@ function restoreDatabase(){
     _username=$(getUsername ${_databaseSpec})
     _password=$(getPassword ${_databaseSpec})
 
-    if [ -z "${_quiet}" ]; then
+    if [ -z "${quiet}" ]; then
       # Ask for the Admin Password for the database
       _msg="Admin password (${_databaseSpec}):"
       _yellow='\033[1;33m'
@@ -538,7 +548,7 @@ function restoreDatabase(){
     echo -e "Restore complete - Elapsed time: $(($duration/3600))h:$(($duration%3600/60))m:$(($duration%60))s"\\n
 
     # List tables
-    if [ -z "${_quiet}" ] && (( ${_rtnCd} == 0 )); then
+    if [ -z "${quiet}" ] && (( ${_rtnCd} == 0 )); then
       psql -h "${_hostname}" -p "${_port}" -d "${_database}" -c "\d"
       _rtnCd=${?}
     fi
@@ -594,7 +604,15 @@ function getBackupType(){
 
 function createBackupFolder(){
   (
-    genOnly=${1}
+    local OPTIND
+    local genOnly
+    unset genOnly
+    while getopts g FLAG; do
+      case $FLAG in
+        g ) genOnly=1 ;;
+      esac
+    done
+    shift $((OPTIND-1))
 
     _backupTypeDir="$(getBackupType)"
     if [ ! -z "${_backupTypeDir}" ]; then
@@ -661,7 +679,7 @@ function formatList(){
 }
 
 function listSettings(){
-  _backupDirectory=${1:-$(createBackupFolder 1)}
+  _backupDirectory=${1:-$(createBackupFolder -g)}
   _databaseList=${2:-$(readConf 2>/dev/null)}
   _yellow='\e[33m'
   _nc='\e[0m' # No Color
@@ -690,7 +708,7 @@ function listSettings(){
   echo "- Backup folder: ${_backupDirectory}"
   if [[ "${_mode}" != ${ONCE} ]]; then
     if [[ "${_mode}" == ${CRON} ]] || [[ "${_mode}" == ${SCHEDULED} ]]; then
-      _backupSchedule=$(readConf 1 2>/dev/null)
+      _backupSchedule=$(readConf -c 2>/dev/null)
       echo "- Time Zone: $(date +"%Z %z")"
     fi
     _backupSchedule=$(formatList "${_backupSchedule:-${BACKUP_PERIOD}}")
@@ -742,7 +760,7 @@ function isInstalled(){
 
 function cronMode(){
   (
-    cronTabs=$(readConf 1 2>/dev/null)
+    cronTabs=$(readConf -c 2>/dev/null)
     if isInstalled "go-crond" && [ ! -z "${cronTabs}" ]; then
       return 0
     else
@@ -871,6 +889,16 @@ function pingDbServer(){
 
 function verifyBackup(){
   (
+    local OPTIND
+    local quiet
+    unset quiet
+    while getopts q FLAG; do
+      case $FLAG in
+        q ) quiet=1 ;;
+      esac
+    done
+    shift $((OPTIND-1))
+
     _databaseSpec=${1}
     _fileName=${2}
     _fileName=$(findBackup "${_databaseSpec}" "${_fileName}")
@@ -887,10 +915,13 @@ function verifyBackup(){
       echoRed "- Backup file: No backup file found or specified.  Cannot continue with the backup verification.\n"
       exit 0
     fi
-    waitForAnyKey
+
+    if [ -z "${quiet}" ]; then
+      waitForAnyKey
+    fi
 
     # Export the database name
-    export POSTGRESQL_DATABASE=test_database
+    export POSTGRESQL_DATABASE=$(getDatabaseName "${_restoreDbSpec}")
 
     # Start a local PostgreSql instance
     run-postgresql >/dev/null 2>&1 &
@@ -898,15 +929,14 @@ function verifyBackup(){
     # Wait for server to start ...
     SECONDS=0
     rtnCd=0
-    _waitingForDB="waiting for server to start ."
+    _waitingForDB="waiting for server to start."
     while ! pingDbServer; do
       printf "\r${_waitingForDB}"
       _waitingForDB="${_waitingForDB}."
-
-      # ToDo: Need to fail if we have waited too long ...
-      if (( ${SECONDS} >= 30 )); then
+      if (( ${SECONDS} >= ${DATABASE_SERVER_TIMEOUT} )); then
         echoRed "\nThe server failed to start within ${SECONDS} seconds.\n"
         rtnCd=1
+        break
       fi
       sleep 1
     done
@@ -978,6 +1008,9 @@ export VERIFY="verify"
 export CRON="cron"
 export LEGACY="legacy"
 export ERROR="error"
+
+# Other:
+export DATABASE_SERVER_TIMEOUT=${DATABASE_SERVER_TIMEOUT:-30}
 # ======================================================================================
 
 # =================================================================================================================
