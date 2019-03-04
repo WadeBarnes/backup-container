@@ -484,7 +484,7 @@ function restoreDatabase(){
       else
         echoRed "- Backup file: No backup file found or specified.  Cannot continue with the restore.\n"
         exit 0
-      fi    
+      fi
       waitForAnyKey
     fi
 
@@ -538,7 +538,7 @@ function restoreDatabase(){
     echo -e "Restore complete - Elapsed time: $(($duration/3600))h:$(($duration%3600/60))m:$(($duration%60))s"\\n
 
     # List tables
-    if (( ${_rtnCd} == 0 )); then
+    if [ -z "${_quiet}" ] && (( ${_rtnCd} == 0 )); then
       psql -h "${_hostname}" -p "${_port}" -d "${_database}" -c "\d"
       _rtnCd=${?}
     fi
@@ -859,13 +859,13 @@ function startLegacy(){
   )
 }
 
-function chechDb(){
+function pingDbServer(){
   (
     if psql -h 127.0.0.1 -U $POSTGRESQL_USER -q -d $POSTGRESQL_DATABASE -c 'SELECT 1' >/dev/null 2>&1; then
       return 0
     else
       return 1
-    fi   
+    fi
   )
 }
 
@@ -894,13 +894,16 @@ function verifyBackup(){
 
     # Start a local PostgreSql instance
     run-postgresql >/dev/null 2>&1 &
-   
+
     # Wait for server to start ...
     _waitingForDB="waiting for server to start ."
-    while ! chechDb; do
-      printf "${_waitingForDB}\r"
+    while ! pingDbServer; do
+      printf "\r${_waitingForDB}"
       _waitingForDB="${_waitingForDB}."
       sleep 1
+
+      # ToDo: Need to fail if we have waited too long ...
+
     done
 
     # Restore the database
