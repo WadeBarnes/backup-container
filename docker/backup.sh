@@ -519,7 +519,7 @@ function restoreDatabase(){
       echo "Restoring from backup ..."
       gunzip -c "${_fileName}" | psql -h "${_hostname}" -p "${_port}" -d "${_database}"
       # Get the status code from psql specifically.  ${?} would only provide the status of the last command, psql in this case.
-      _rtnCd=${PIPESTATUS[0]}
+      _rtnCd=${PIPESTATUS[1]}
     fi
 
     duration=$SECONDS
@@ -759,12 +759,26 @@ function restoreMode(){
   )
 }
 
+function verifyMode(){
+  (
+    if [ ! -z "${_verifyBackup}" ]; then
+      return 0
+    else
+      return 1
+    fi
+  )
+}
+
 function getMode(){
   (
     unset _mode
 
     if [ -z "${_mode}" ] && restoreMode; then
       _mode="${RESTORE}"
+    fi
+
+    if [ -z "${_mode}" ] && verifyMode; then
+      _mode="${VERIFY}"
     fi
 
     if [ -z "${_mode}" ] && runOnce; then
@@ -833,14 +847,25 @@ function startLegacy(){
   )
 }
 
-function validateBackup(){
+function verifyBackup(){
   (
     _databaseSpec=${1}
     _fileName=${2}
-
-    # Parse the parameters ...
     _fileName=$(findBackup "${_databaseSpec}" "${_fileName}")
-    _databaseSpec="localhost/test_database"
+    _restoreDbSpec="localhost/test_database"
+
+    echoBlue "\nVerifying backup ..."
+    echo -e "\nSettings:"
+    echo "- Database: ${_databaseSpec}"
+    echo "- Restoring to: ${_restoreDbSpec}"
+
+    if [ ! -z "${_fileName}" ]; then
+      echo -e "- Backup file: ${_fileName}\n"
+    else
+      echoRed "- Backup file: No backup file found or specified.  Cannot continue with the backup verification.\n"
+      exit 0
+    fi
+    waitForAnyKey
 
     # Export the database name
     export POSTGRESQL_DATABASE=test_database
@@ -849,7 +874,7 @@ function validateBackup(){
     run-postgresql &
 
     # Restore the database
-    if restoreDatabase "${_databaseSpec}" "${_fileName}"; then
+    if restoreDatabase "${_restoreDbSpec}" "${_fileName}"; then
       echoGreen "Successfully verified backup; ${_fileName}"
     else
       echoRed "Backup verification failed; ${_fileName}"
@@ -865,11 +890,6 @@ function validateBackup(){
     rm -rf /var/lib/pgsql/data/userdata
   )
 }
-
-
-
-
-
 # ======================================================================================
 
 # ======================================================================================
@@ -909,6 +929,7 @@ WEBHOOK_TEMPLATE=${WEBHOOK_TEMPLATE:-webhook-template.json}
 export ONCE="once"
 export SCHEDULED="scheduled"
 export RESTORE="restore"
+export VERIFY="verify"
 export CRON="cron"
 export LEGACY="legacy"
 export ERROR="error"
@@ -917,7 +938,7 @@ export ERROR="error"
 # =================================================================================================================
 # Initialization:
 # -----------------------------------------------------------------------------------------------------------------
-while getopts clr:f:1sh FLAG; do
+while getopts clr:v:f:1sh FLAG; do
   case $FLAG in
     c)
       echoBlue "\nListing configuration settings ..."
@@ -932,8 +953,12 @@ while getopts clr:f:1sh FLAG; do
       # Trigger restore mode ...
       export _restoreDatabase=${OPTARG}
       ;;
+    v)
+      # Trigger verify mode ...
+      export _verifyBackup=${OPTARG}
+      ;;
     f)
-      # Optionally specify the backup file to restore from ...
+      # Optionally specify the backup file to verify or restore from ...
       export _fromBackup=${OPTARG}
       ;;
     1)
@@ -970,6 +995,10 @@ case $(getMode) in
 
   ${RESTORE})
     restoreDatabase "${_restoreDatabase}" "${_fromBackup}"
+    ;;
+
+  ${VERIFY})
+    verifyBackup "${_verifyBackup}" "${_fromBackup}"
     ;;
 
   ${CRON})
