@@ -462,6 +462,14 @@ function findBackup(){
 
 function restoreDatabase(){
   (
+    local OPTIND
+    while getopts q FLAG; do
+      case $FLAG in
+        q ) _quiet=1 ;;
+      esac
+    done
+    shift $((OPTIND-1))
+
     _databaseSpec=${1}
     _fileName=${2}
     _fileName=$(findBackup "${_databaseSpec}" "${_fileName}")
@@ -476,7 +484,10 @@ function restoreDatabase(){
       echoRed "- Backup file: No backup file found or specified.  Cannot continue with the restore.\n"
       exit 0
     fi
-    waitForAnyKey
+    
+    if [ -z "${_quiet}" ]; then
+      waitForAnyKey
+    fi
 
     _hostname=$(getHostname ${_databaseSpec})
     _port=$(getPort ${_databaseSpec})
@@ -484,13 +495,16 @@ function restoreDatabase(){
     _username=$(getUsername ${_databaseSpec})
     _password=$(getPassword ${_databaseSpec})
 
-    # Ask for the Admin Password for the database
-    _msg="Admin password (${_databaseSpec}):"
-    _yellow='\033[1;33m'
-    _nc='\033[0m' # No Color
-    _message=$(echo -e "${_yellow}${_msg}${_nc}")
-    read -r -s -p $"${_message}" _adminPassword
-    echo -e "\n"
+
+    if [ -z "${_quiet}" ]; then
+      # Ask for the Admin Password for the database
+      _msg="Admin password (${_databaseSpec}):"
+      _yellow='\033[1;33m'
+      _nc='\033[0m' # No Color
+      _message=$(echo -e "${_yellow}${_msg}${_nc}")
+      read -r -s -p $"${_message}" _adminPassword
+      echo -e "\n"
+    fi
 
     export PGPASSWORD=${_adminPassword}
     SECONDS=0
@@ -847,6 +861,16 @@ function startLegacy(){
   )
 }
 
+function chechDb(){
+  (
+    if psql -h 127.0.0.1 -U $POSTGRESQL_USER -q -d $POSTGRESQL_DATABASE -c 'SELECT 1'; then
+      return 0
+    else
+      return 1
+    fi   
+  )
+}
+
 function verifyBackup(){
   (
     _databaseSpec=${1}
@@ -872,16 +896,24 @@ function verifyBackup(){
 
     # Start a local PostgreSql instance
     run-postgresql &
+   
+    # Wait for server to start ...
+    _waitingForDB="Waiting for database service to start ."
+    while ! chechDb; do
+      printf ${_waitingForDB}
+      _waitingForDB="${_waitingForDB}."
+      sleep 1
+    done
 
     # Restore the database
-    if restoreDatabase "${_restoreDbSpec}" "${_fileName}"; then
+    if restoreDatabase -q "${_restoreDbSpec}" "${_fileName}"; then
       echoGreen "Successfully verified backup; ${_fileName}"
     else
       echoRed "Backup verification failed; ${_fileName}"
     fi
 
-    # List the databases
-    psql -c "\l"
+    # # List the databases
+    # psql -c "\l"
 
     # Stop the local PostgreSql instance
     pg_ctl stop -D /var/lib/pgsql/data/userdata
