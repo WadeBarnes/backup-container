@@ -808,7 +808,17 @@ function getMode(){
     fi
 
     if [ -z "${_mode}" ] && verifyMode; then
-      _mode="${VERIFY}"
+      # Determine if this is a scheduled verification or a manual one.
+      if isScheduled; then
+        if cronMode; then
+          _mode="${SCHEDULED_VERIFY}"
+        else
+          _mode="${ERROR}"
+          echoRed "Scheduled mode cannot be used without cron being installed and at least one cron tab being defined in ${BACKUP_CONF}."  >&2
+        fi
+      else
+        _mode="${VERIFY}"
+      fi
     fi
 
     if [ -z "${_mode}" ] && runOnce; then
@@ -1008,6 +1018,7 @@ export VERIFY="verify"
 export CRON="cron"
 export LEGACY="legacy"
 export ERROR="error"
+export SCHEDULED_VERIFY="scheduled-verify"
 
 # Other:
 export DATABASE_SERVER_TIMEOUT=${DATABASE_SERVER_TIMEOUT:-30}
@@ -1077,6 +1088,10 @@ case $(getMode) in
 
   ${VERIFY})
     verifyBackup "${_verifyBackup}" "${_fromBackup}"
+    ;;
+
+  ${SCHEDULED_VERIFY})
+    verifyBackup -q "${_verifyBackup}" "${_fromBackup}"
     ;;
 
   ${CRON})
