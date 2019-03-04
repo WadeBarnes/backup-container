@@ -863,7 +863,7 @@ function startLegacy(){
 
 function chechDb(){
   (
-    if psql -h 127.0.0.1 -U $POSTGRESQL_USER -q -d $POSTGRESQL_DATABASE -c 'SELECT 1'; then
+    if psql -h 127.0.0.1 -U $POSTGRESQL_USER -q -d $POSTGRESQL_DATABASE -c 'SELECT 1' >/dev/null 2>&1; then
       return 0
     else
       return 1
@@ -895,10 +895,10 @@ function verifyBackup(){
     export POSTGRESQL_DATABASE=test_database
 
     # Start a local PostgreSql instance
-    run-postgresql &
+    run-postgresql >/dev/null 2>&1 &
    
     # Wait for server to start ...
-    _waitingForDB="Waiting for database service to start ."
+    _waitingForDB="waiting for server to start ."
     while ! chechDb; do
       printf ${_waitingForDB}
       _waitingForDB="${_waitingForDB}."
@@ -907,18 +907,16 @@ function verifyBackup(){
 
     # Restore the database
     if restoreDatabase -q "${_restoreDbSpec}" "${_fileName}"; then
-      echoGreen "Successfully verified backup; ${_fileName}"
+      echoGreen "Successfully verified backup; ${_fileName}\n"
     else
-      echoRed "Backup verification failed; ${_fileName}"
+      echoRed "Backup verification failed; ${_fileName}\n"
     fi
-
-    # # List the databases
-    # psql -c "\l"
 
     # Stop the local PostgreSql instance
     pg_ctl stop -D /var/lib/pgsql/data/userdata
 
     # Delete the database files and configuration
+    echo -e "Cleaning up ...\n"
     rm -rf /var/lib/pgsql/data/userdata
   )
 }
