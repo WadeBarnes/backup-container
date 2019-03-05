@@ -491,10 +491,13 @@ function restoreDatabase(){
   (
     local OPTIND
     local quiet
+    local localhost
     unset quiet
+    unset localhost
     while getopts q FLAG; do
       case $FLAG in
         q ) quiet=1 ;;
+        l ) localhost=1 ;;
       esac
     done
     shift $((OPTIND-1))
@@ -517,11 +520,16 @@ function restoreDatabase(){
       waitForAnyKey
     fi
 
-    _hostname=$(getHostname ${_databaseSpec})
-    _port=$(getPort ${_databaseSpec})
     _database=$(getDatabaseName ${_databaseSpec})
     _username=$(getUsername ${_databaseSpec})
     _password=$(getPassword ${_databaseSpec})
+    if [ -z "${localhost}" ]; then
+      _hostname=$(getHostname ${_databaseSpec})
+      _port=$(getPort ${_databaseSpec})
+    else
+      _hostname="127.0.0.1"
+      _port="${DEFAULT_PORT}"
+    fi  
 
     if [ -z "${quiet}" ]; then
       # Ask for the Admin Password for the database
@@ -920,7 +928,7 @@ startServer(){
     SECONDS=0
     rtnCd=0
     _waitingForDB="waiting for server to start."
-    while ! pingDbServer; do
+    while ! pingDbServer ${_databaseSpec}; do
       printf "\r${_waitingForDB}"
       _waitingForDB="${_waitingForDB}."
       if (( ${SECONDS} >= ${DATABASE_SERVER_TIMEOUT} )); then
@@ -948,7 +956,10 @@ stopServer(){
 
 function pingDbServer(){
   (
-    if psql -h 127.0.0.1 -U $POSTGRESQL_USER -q -d $POSTGRESQL_DATABASE -c 'SELECT 1' >/dev/null 2>&1; then
+    _databaseSpec=${1}
+    _database=$(getDatabaseName "${_databaseSpec}")
+    _user=$(getUsername "${_databaseSpec}")
+    if psql -h 127.0.0.1 -U ${_user} -q -d ${_database} -c 'SELECT 1' >/dev/null 2>&1; then
       return 0
     else
       return 1
@@ -997,12 +1008,10 @@ function verifyBackup(){
     _databaseSpec=${1}
     _fileName=${2}
     _fileName=$(findBackup "${_databaseSpec}" "${_fileName}")
-    _localDatabaseSpec="localhost/$(getDatabaseName "${_databaseSpec}")"
 
     echoBlue "\nVerifying backup ..."
     echo -e "\nSettings:"
     echo "- Database: ${_databaseSpec}"
-    echo "- Restoring to: ${_localDatabaseSpec}"
 
     if [ ! -z "${_fileName}" ]; then
       echo -e "- Backup file: ${_fileName}\n"
@@ -1023,10 +1032,10 @@ function verifyBackup(){
       echo
       echo "Restoring from backup ..."
       if [ -z "${quiet}" ]; then
-        restoreDatabase -q "${_localDatabaseSpec}" "${_fileName}"
+        restoreDatabase -l "${_databaseSpec}" "${_fileName}"
         rtnCd=${?}
       else
-        restoreLog=$(restoreDatabase -q "${_localDatabaseSpec}" "${_fileName}" >/dev/null)
+        restoreLog=$(restoreDatabase -ql "${_databaseSpec}" "${_fileName}" >/dev/null)
         rtnCd=${?}
 
         if [ ! -z "${restoreLog}" ]; then
