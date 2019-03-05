@@ -138,6 +138,17 @@ function logInfo(){
   )
 }
 
+function logWarn(){
+  (
+    warnMsg="${1}"
+    echoYellow "${warnMsg}"
+    postMsgToWebhook "${ENVIRONMENT_FRIENDLY_NAME}" \
+                     "${ENVIRONMENT_NAME}" \
+                     "WARN" \
+                     "${warnMsg}"
+  )
+}
+
 function logError(){
   (
     errorMsg="${1}"
@@ -270,7 +281,7 @@ function readConf(){
     fi
 
     if [ -f ${BACKUP_CONF} ]; then
-      
+
       if [ -z "${quiet}" ]; then
         echo "Reading backup config from ${BACKUP_CONF} ..." >&2
       fi
@@ -895,6 +906,46 @@ function startLegacy(){
   )
 }
 
+startServer(){
+  (
+    _databaseSpec=${1}
+
+    # Start a local PostgreSql instance
+    POSTGRESQL_DATABASE=$(getDatabaseName "${_databaseSpec}") \
+    POSTGRESQL_USER=$(getUsername "${_databaseSpec}") \
+    POSTGRESQL_PASSWORD=$(getPassword "${_databaseSpec}") \
+    run-postgresql >/dev/null 2>&1 &
+
+    # Wait for server to start ...
+    SECONDS=0
+    rtnCd=0
+    _waitingForDB="waiting for server to start."
+    while ! pingDbServer; do
+      printf "\r${_waitingForDB}"
+      _waitingForDB="${_waitingForDB}."
+      if (( ${SECONDS} >= ${DATABASE_SERVER_TIMEOUT} )); then
+        echoRed "\nThe server failed to start within ${SECONDS} seconds.\n"
+        rtnCd=1
+        break
+      fi
+      sleep 1
+    done
+
+    return ${rtnCd}
+  )
+}
+
+stopServer(){
+  (
+    # Stop the local PostgreSql instance
+    pg_ctl stop -D /var/lib/pgsql/data/userdata
+
+    # Delete the database files and configuration
+    echo -e "Cleaning up ...\n"
+    rm -rf /var/lib/pgsql/data/userdata
+  )
+}
+
 function pingDbServer(){
   (
     if psql -h 127.0.0.1 -U $POSTGRESQL_USER -q -d $POSTGRESQL_DATABASE -c 'SELECT 1' >/dev/null 2>&1; then
@@ -919,14 +970,14 @@ function verifyBackups(){
 
     _databaseSpec=${1}
     _fileName=${2}
-    if [[ "${_databaseSpec}" == "all" ]]; then 
+    if [[ "${_databaseSpec}" == "all" ]]; then
       databases=$(readConf -q)
     else
       databases=${_databaseSpec}
     fi
 
     for database in ${databases}; do
-      verifyBackup ${flags} "${database}" "${_fileName}" 
+      verifyBackup ${flags} "${database}" "${_fileName}"
     done
   )
 }
@@ -946,12 +997,12 @@ function verifyBackup(){
     _databaseSpec=${1}
     _fileName=${2}
     _fileName=$(findBackup "${_databaseSpec}" "${_fileName}")
-    _restoreDbSpec="localhost/test_database"
+    _localDatabaseSpec="localhost/$(getDatabaseName "${_databaseSpec}")"
 
     echoBlue "\nVerifying backup ..."
     echo -e "\nSettings:"
     echo "- Database: ${_databaseSpec}"
-    echo "- Restoring to: ${_restoreDbSpec}"
+    echo "- Restoring to: ${_localDatabaseSpec}"
 
     if [ ! -z "${_fileName}" ]; then
       echo -e "- Backup file: ${_fileName}\n"
@@ -964,41 +1015,27 @@ function verifyBackup(){
       waitForAnyKey
     fi
 
-    # Export the database name
-    export POSTGRESQL_DATABASE=$(getDatabaseName "${_restoreDbSpec}")
-
-    # Start a local PostgreSql instance
-    run-postgresql >/dev/null 2>&1 &
-
-    # Wait for server to start ...
-    SECONDS=0
-    rtnCd=0
-    _waitingForDB="waiting for server to start."
-    while ! pingDbServer; do
-      printf "\r${_waitingForDB}"
-      _waitingForDB="${_waitingForDB}."
-      if (( ${SECONDS} >= ${DATABASE_SERVER_TIMEOUT} )); then
-        echoRed "\nThe server failed to start within ${SECONDS} seconds.\n"
-        rtnCd=1
-        break
-      fi
-      sleep 1
-    done
+    startServer "${_databaseSpec}"
+    rtnCd=${?}
 
     # Restore the database
     if (( ${rtnCd} == 0 )); then
       echo
       echo "Restoring from backup ..."
-      restoreDatabase -q "${_restoreDbSpec}" "${_fileName}" >/dev/null
-      rtnCd=${?}
+      if [ -z "${quiet}" ]; then
+        restoreDatabase -q "${_localDatabaseSpec}" "${_fileName}"
+        rtnCd=${?}
+      else
+        restoreLog=$(restoreDatabase -q "${_localDatabaseSpec}" "${_fileName}" >/dev/null)
+        rtnCd=${?}
+
+        if [ ! -z "${restoreLog}" ]; then
+          logWarn "The following errors were encountered during backup verification;\n${restoreLog}"
+        fi
+      fi
     fi
 
-    # Stop the local PostgreSql instance
-    pg_ctl stop -D /var/lib/pgsql/data/userdata
-
-    # Delete the database files and configuration
-    echo -e "Cleaning up ...\n"
-    rm -rf /var/lib/pgsql/data/userdata
+    stopServer
 
     if (( ${rtnCd} == 0 )); then
       logInfo "Successfully verified backup; ${_fileName}\n"
