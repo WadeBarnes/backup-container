@@ -535,7 +535,9 @@ function restoreDatabase(){
     else
       _hostname="127.0.0.1"
       _port="${DEFAULT_PORT}"
-    fi  
+    fi
+
+    echo "Restoring to ${_hostname}:${_port} ..."
 
     if [ -z "${quiet}" ]; then
       # Ask for the Admin Password for the database
@@ -887,7 +889,7 @@ function runBackups(){
     listSettings "${backupDir}" "${databases}"
 
     for database in ${databases}; do
-      
+
       local startTime=${SECONDS}
       filename=$(generateFilename "${backupDir}" "${database}")
       backupDatabase "${database}" "${filename}"
@@ -1064,7 +1066,7 @@ function verifyBackup(){
 
     stopServer
     local duration=$(($SECONDS - $startTime))
-    local elapsedTime="\n\nElapsed time: $(($duration/3600))h:$(($duration%3600/60))m:$(($duration%60))s - Status Code: ${rtnCd}"    
+    local elapsedTime="\n\nElapsed time: $(($duration/3600))h:$(($duration%3600/60))m:$(($duration%60))s - Status Code: ${rtnCd}"
 
     if (( ${rtnCd} == 0 )); then
       logInfo "Successfully verified backup; ${_fileName}${restoreLog}${elapsedTime}"
