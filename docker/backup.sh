@@ -926,8 +926,7 @@ function verifyBackups(){
     fi
 
     for database in ${databases}; do
-      echo "verifyBackup ${flags} \"${database}\" \"${_fileName}\""
-      #verifyBackup ${flags} "${database}" "${_fileName}" 
+      verifyBackup ${flags} "${database}" "${_fileName}" 
     done
   )
 }
