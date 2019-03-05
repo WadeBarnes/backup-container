@@ -1064,14 +1064,35 @@ function verifyBackup(){
       fi
     fi
 
+    # Ensure there are tables in the databse and general queries work
+    if (( ${rtnCd} == 0 )); then
+      _hostname="127.0.0.1"
+      _port="${DEFAULT_PORT}"
+      _database=$(getDatabaseName ${_databaseSpec})
+      tables=$(psql -h "${_hostname}" -p "${_port}" -d "${_database}" -t -c "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';")
+      rtnCd=${?}
+    fi
+
+    if (( ${rtnCd} == 0 )); then
+      numResults=$(echo "${tables}"| wc -l)
+      if [[ ! -z "${tables}" ]] && (( numResults >= 1 )); then
+        # All good
+        verificationLog="\nThe restored database contained ${numResults} tables."
+      else
+        # Not so good
+        verificationLog="\nNo tables were found in the restored database."
+        rtnCd="-1"
+      fi
+    fi
+
     stopServer
     local duration=$(($SECONDS - $startTime))
     local elapsedTime="\n\nElapsed time: $(($duration/3600))h:$(($duration%3600/60))m:$(($duration%60))s - Status Code: ${rtnCd}"
 
     if (( ${rtnCd} == 0 )); then
-      logInfo "Successfully verified backup; ${_fileName}${restoreLog}${elapsedTime}"
+      logInfo "Successfully verified backup; ${_fileName}${verificationLog}${restoreLog}${elapsedTime}"
     else
-      logError "Backup verification failed; ${_fileName}${restoreLog}${elapsedTime}"
+      logError "Backup verification failed; ${_fileName}${verificationLog}${restoreLog}${elapsedTime}"
     fi
 
     return ${rtnCd}
