@@ -451,7 +451,6 @@ function backupDatabase(){
     echoGreen "\nBacking up ${_databaseSpec} ..."
 
     export PGPASSWORD=${_password}
-    local startTime=${SECONDS}
     touchBackupFile "${_backupFile}"
 
     pg_dump -Fp -h "${_hostname}" -p "${_port}" -U "${_username}" "${_database}" | gzip > ${_backupFile}
@@ -461,9 +460,6 @@ function backupDatabase(){
     if (( ${_rtnCd} != 0 )); then
       rm -rfvd ${_backupFile}
     fi
-
-    local duration=$(($SECONDS - $startTime))
-    echo "Elapsed time: $(($duration/3600))h:$(($duration%3600/60))m:$(($duration%60))s - Status Code: ${_rtnCd}"
     return ${_rtnCd}
   )
 }
