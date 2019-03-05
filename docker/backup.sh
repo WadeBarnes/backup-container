@@ -130,7 +130,7 @@ function echoMagenta (){
 function logInfo(){
   (
     infoMsg="${1}"
-    echo "${infoMsg}"
+    echo -e "${infoMsg}"
     postMsgToWebhook "${ENVIRONMENT_FRIENDLY_NAME}" \
                      "${ENVIRONMENT_NAME}" \
                      "INFO" \
@@ -242,10 +242,13 @@ function readConf(){
   (
     local OPTIND
     local readCron
+    local quiet
     unset readCron
-    while getopts c FLAG; do
+    unset quiet
+    while getopts cq FLAG; do
       case $FLAG in
         c ) readCron=1 ;;
+        q ) quiet=1 ;;
       esac
     done
     shift $((OPTIND-1))
@@ -267,13 +270,18 @@ function readConf(){
     fi
 
     if [ -f ${BACKUP_CONF} ]; then
-      echo "Reading backup config from ${BACKUP_CONF} ..." >&2
+      
+      if [ -z "${quiet}" ]; then
+        echo "Reading backup config from ${BACKUP_CONF} ..." >&2
+      fi
       _value=$(sed "${filters}" ${BACKUP_CONF})
     fi
 
     if [ -z "${_value}" ] && [ -z "${readCron}" ]; then
       # Backward compatibility
-      echo "Reading backup config from environment variables ..." >&2
+      if [ -z "${quiet}" ]; then
+        echo "Reading backup config from environment variables ..." >&2
+      fi
       _value="${DATABASE_SERVICE_NAME}:${DEFAULT_PORT}/${POSTGRESQL_DATABASE}"
     fi
 
@@ -680,7 +688,7 @@ function formatList(){
 
 function listSettings(){
   _backupDirectory=${1:-$(createBackupFolder -g)}
-  _databaseList=${2:-$(readConf 2>/dev/null)}
+  _databaseList=${2:-$(readConf -q)}
   _yellow='\e[33m'
   _nc='\e[0m' # No Color
   _notConfigured="${_yellow}not configured${_nc}"
@@ -708,7 +716,7 @@ function listSettings(){
   echo "- Backup folder: ${_backupDirectory}"
   if [[ "${_mode}" != ${ONCE} ]]; then
     if [[ "${_mode}" == ${CRON} ]] || [[ "${_mode}" == ${SCHEDULED} ]]; then
-      _backupSchedule=$(readConf -c 2>/dev/null)
+      _backupSchedule=$(readConf -cq)
       echo "- Time Zone: $(date +"%Z %z")"
     fi
     _backupSchedule=$(formatList "${_backupSchedule:-${BACKUP_PERIOD}}")
@@ -760,7 +768,7 @@ function isInstalled(){
 
 function cronMode(){
   (
-    cronTabs=$(readConf -c 2>/dev/null)
+    cronTabs=$(readConf -cq)
     if isInstalled "go-crond" && [ ! -z "${cronTabs}" ]; then
       return 0
     else
@@ -894,6 +902,33 @@ function pingDbServer(){
     else
       return 1
     fi
+  )
+}
+
+function verifyBackups(){
+  (
+    local OPTIND
+    local flags
+    unset flags
+    while getopts q FLAG; do
+      case $FLAG in
+        * ) flags+="-${FLAG} " ;;
+      esac
+    done
+    shift $((OPTIND-1))
+
+    _databaseSpec=${1}
+    _fileName=${2}
+    if [[ "${_databaseSpec}" == "all" ]]; then 
+      databases=$(readConf -q)
+    else
+      databases=${_databaseSpec}
+    fi
+
+    for database in ${databases}; do
+      echo "verifyBackup ${flags} \"${database}\" \"${_fileName}\""
+      #verifyBackup ${flags} "${database}" "${_fileName}" 
+    done
   )
 }
 
@@ -1087,11 +1122,11 @@ case $(getMode) in
     ;;
 
   ${VERIFY})
-    verifyBackup "${_verifyBackup}" "${_fromBackup}"
+    verifyBackups "${_verifyBackup}" "${_fromBackup}"
     ;;
 
   ${SCHEDULED_VERIFY})
-    verifyBackup -q "${_verifyBackup}" "${_fromBackup}"
+    verifyBackups -q "${_verifyBackup}" "${_fromBackup}"
     ;;
 
   ${CRON})
