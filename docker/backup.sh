@@ -334,7 +334,7 @@ function finalizeBackup(){
 
     if [ -f ${_inProgressFilename} ]; then
       mv "${_inProgressFilename}" "${_finalFilename}"
-      logInfo "Backup written to ${_finalFilename} ..."
+      echo "${_finalFilename}"
     fi
   )
 }
@@ -451,7 +451,7 @@ function backupDatabase(){
     echoGreen "\nBacking up ${_databaseSpec} ..."
 
     export PGPASSWORD=${_password}
-    SECONDS=0
+    local startTime=${SECONDS}
     touchBackupFile "${_backupFile}"
 
     pg_dump -Fp -h "${_hostname}" -p "${_port}" -U "${_username}" "${_database}" | gzip > ${_backupFile}
@@ -462,7 +462,7 @@ function backupDatabase(){
       rm -rfvd ${_backupFile}
     fi
 
-    duration=$SECONDS
+    local duration=$(($SECONDS - $startTime))
     echo "Elapsed time: $(($duration/3600))h:$(($duration%3600/60))m:$(($duration%60))s - Status Code: ${_rtnCd}"
     return ${_rtnCd}
   )
@@ -552,7 +552,7 @@ function restoreDatabase(){
     fi
 
     export PGPASSWORD=${_adminPassword}
-    SECONDS=0
+    local startTime=${SECONDS}
 
     # Drop
     psql -h "${_hostname}" -p "${_port}" -ac "DROP DATABASE \"${_database}\";"
@@ -581,7 +581,7 @@ function restoreDatabase(){
       _rtnCd=${PIPESTATUS[1]}
     fi
 
-    duration=$SECONDS
+    local duration=$(($SECONDS - $startTime))
     echo -e "Restore complete - Elapsed time: $(($duration/3600))h:$(($duration%3600/60))m:$(($duration%60))s"\\n
 
     # List tables
@@ -891,14 +891,23 @@ function runBackups(){
     listSettings "${backupDir}" "${databases}"
 
     for database in ${databases}; do
+      
+      local startTime=${SECONDS}
       filename=$(generateFilename "${backupDir}" "${database}")
-      if backupDatabase "${database}" "${filename}"; then
-        finalizeBackup "${filename}"
+      backupDatabase "${database}" "${filename}"
+      rtnCd=${?}
+      local duration=$(($SECONDS - $startTime))
+      local elapsedTime="\n\nElapsed time: $(($duration/3600))h:$(($duration%3600/60))m:$(($duration%60))s - Status Code: ${rtnCd}"
+
+      if (( ${rtnCd} == 0 )); then
+        backupPath=$(finalizeBackup "${filename}")
+        logInfo "Successfully backed up ${database}.\nBackup written to ${backupPath}.${elapsedTime}"
         ftpBackup "${filename}"
         pruneBackups "${backupDir}" "${database}"
       else
-        logError "Failed to backup ${database}."
+        logError "Failed to backup ${database}.${elapsedTime}"
       fi
+
     done
 
     listExistingBackups ${ROOT_BACKUP_DIR}
@@ -935,14 +944,15 @@ function startServer(){
     run-postgresql >/dev/null 2>&1 &
 
     # Wait for server to start ...
-    SECONDS=0
+    local startTime=${SECONDS}
     rtnCd=0
     _waitingForDB="waiting for server to start."
     while ! pingDbServer ${_databaseSpec}; do
       printf "\r${_waitingForDB}"
       _waitingForDB="${_waitingForDB}."
-      if (( ${SECONDS} >= ${DATABASE_SERVER_TIMEOUT} )); then
-        echoRed "\nThe server failed to start within ${SECONDS} seconds.\n"
+      local duration=$(($SECONDS - $startTime))
+      if (( ${duration} >= ${DATABASE_SERVER_TIMEOUT} )); then
+        echoRed "\nThe server failed to start within ${duration} seconds.\n"
         rtnCd=1
         break
       fi
@@ -1034,6 +1044,7 @@ function verifyBackup(){
       waitForAnyKey
     fi
 
+    local startTime=${SECONDS}
     startServer "${_databaseSpec}"
     rtnCd=${?}
 
@@ -1056,11 +1067,13 @@ function verifyBackup(){
     fi
 
     stopServer
+    local duration=$(($SECONDS - $startTime))
+    local elapsedTime="\n\nElapsed time: $(($duration/3600))h:$(($duration%3600/60))m:$(($duration%60))s - Status Code: ${rtnCd}"    
 
     if (( ${rtnCd} == 0 )); then
-      logInfo "Successfully verified backup; ${_fileName}${restoreLog}"
+      logInfo "Successfully verified backup; ${_fileName}${restoreLog}${elapsedTime}"
     else
-      logError "Backup verification failed; ${_fileName}${restoreLog}"
+      logError "Backup verification failed; ${_fileName}${restoreLog}${elapsedTime}"
     fi
 
     return ${rtnCd}
