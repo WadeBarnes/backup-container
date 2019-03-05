@@ -168,6 +168,16 @@ EOF
   echo "${_payload}"
 }
 
+function formatWebhookMsg(){
+  (
+    # Escape all double quotes
+    # Escape all newlines
+    filters='s~"~\\"~g;:a;N;$!ba;s~\n~\\n~g;'
+    _value=$(echo "${1}" | sed "${filters}")
+    echo "${_value}"
+  )
+}
+
 function postMsgToWebhook(){
   (
     if [ -z "${WEBHOOK_URL}" ] && [ -f ${WEBHOOK_TEMPLATE} ]; then
@@ -177,7 +187,7 @@ function postMsgToWebhook(){
     projectFriendlyName=${1}
     projectName=${2}
     statusCode=${3}
-    message=${4}
+    message=$(formatWebhookMsg "${4}")
     curl -s -X POST -H 'Content-Type: application/json' --data "$(getWebhookPayload)" "${WEBHOOK_URL}" > /dev/null
   )
 }
@@ -494,7 +504,7 @@ function restoreDatabase(){
     local localhost
     unset quiet
     unset localhost
-    while getopts q FLAG; do
+    while getopts ql FLAG; do
       case $FLAG in
         q ) quiet=1 ;;
         l ) localhost=1 ;;
@@ -914,7 +924,7 @@ function startLegacy(){
   )
 }
 
-startServer(){
+function startServer(){
   (
     _databaseSpec=${1}
 
@@ -943,7 +953,7 @@ startServer(){
   )
 }
 
-stopServer(){
+function stopServer(){
   (
     # Stop the local PostgreSql instance
     pg_ctl stop -D /var/lib/pgsql/data/userdata
@@ -1032,14 +1042,15 @@ function verifyBackup(){
       echo
       echo "Restoring from backup ..."
       if [ -z "${quiet}" ]; then
-        restoreDatabase -l "${_databaseSpec}" "${_fileName}"
+        restoreDatabase -ql "${_databaseSpec}" "${_fileName}"
         rtnCd=${?}
       else
-        restoreLog=$(restoreDatabase -ql "${_databaseSpec}" "${_fileName}" >/dev/null)
+        # Filter out stdout, keep stderr
+        restoreLog=$(restoreDatabase -ql "${_databaseSpec}" "${_fileName}" 2>&1 >/dev/null)
         rtnCd=${?}
 
         if [ ! -z "${restoreLog}" ]; then
-          logWarn "The following errors were encountered during backup verification;\n${restoreLog}"
+          restoreLog="\n\nThe following issues were encountered during backup verification;\n${restoreLog}"
         fi
       fi
     fi
@@ -1047,9 +1058,9 @@ function verifyBackup(){
     stopServer
 
     if (( ${rtnCd} == 0 )); then
-      logInfo "Successfully verified backup; ${_fileName}\n"
+      logInfo "Successfully verified backup; ${_fileName}${restoreLog}"
     else
-      logError "Backup verification failed; ${_fileName}\n"
+      logError "Backup verification failed; ${_fileName}${restoreLog}"
     fi
 
     return ${rtnCd}
