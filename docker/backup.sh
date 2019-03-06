@@ -11,7 +11,7 @@ function usage () {
   There are two modes of scheduling backups:
     - Cron Mode:
       - Allows one or more schedules to be defined as cron tabs in ${BACKUP_CONF}.
-      - If cron (go-crond) is installed and at least one cron tab is defined, the script will startup in Cron Mode,
+      - If cron (go-crond) is installed (which is handled by the Docker file) and at least one cron tab is defined, the script will startup in Cron Mode,
         otherwise it will default to Legacy Mode.
       - Refer to ${BACKUP_CONF} for additional details and examples of using cron scheduling.
 
@@ -25,14 +25,13 @@ function usage () {
     $0 [options]
 
   Standard Options:
-  ========
+  =================
     -h prints this usage documentation.
 
     -1 run once.
        Performs a single set of backups and exits.
 
-    -s run scheduled.
-       Performs similar to run once.
+    -s run in scheduled/silent (no questions asked) mode.
        A flag to be used by cron scheduled backups to indicate they are being run on a schedule.
        Requires cron (go-crond) to be installed and at least one cron tab to be defined in ${BACKUP_CONF}
        Refer to ${BACKUP_CONF} for additional details and examples of using cron scheduling.
@@ -43,8 +42,31 @@ function usage () {
     -c lists the current configuration settings and exits.
        Great for confirming the current settings, and listing the databases included in the backup schedule.
 
+  Verify Options:
+  ================
+    The verify process performs the following basic operations:
+      - Start a local database server instance.
+      - Restore the selected backup locally, watching for errors.
+      - Run a table query on the restored database as a simple test to ensure tables were restored
+        and queries against the database succeed without error.
+      - Stop the local database server instance.
+      - Delete the local database and configuration.
+
+    -v <DatabaseSpec/>; in the form <Hostname/>/<DatabaseName/>, or <Hostname/>:<Port/>/<DatabaseName/>
+       Triggers verify mode and starts verify mode on the specified database.
+
+      Example:
+        $0 -v postgresql:5432/TheOrgBook_Database
+          - Would start the verification process on the database using the most recent backup for the database.
+
+        $0 -v all
+          - Verify the most recent backup of all databases.
+
+    -f <BackupFileFilter/>; an OPTIONAL filter to use to find/identify the backup file to restore.
+       Refer to the same option under 'Restore Options' for details.
+
   Restore Options:
-  ========
+  ================
     The restore process performs the following basic operations:
       - Drop and recreate the selected database.
       - Grant the database user access to the recreated database
@@ -69,7 +91,7 @@ function usage () {
         $0 -r postgresql:5432/TheOrgBook_Database
           - Would start the restore process on the database using the most recent backup for the database.
 
-    -f <BackupFileFilter/>; the filter to use to find/identify the backup file to restore.
+    -f <BackupFileFilter/>; an OPTIONAL filter to use to find/identify the backup file to restore.
        This can be a full or partial file specification.  When only part of a filename is specified the restore process
        attempts to find the most recent backup matching the filter.
        If not specified, the restore process attempts to locate the most recent backup file for the specified database.
