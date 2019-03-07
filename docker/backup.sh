@@ -472,10 +472,8 @@ function backupDatabase(){
 
     echoGreen "\nBacking up ${_databaseSpec} ..."
 
-    export PGPASSWORD=${_password}
     touchBackupFile "${_backupFile}"
-
-    pg_dump -Fp -h "${_hostname}" -p "${_port}" -U "${_username}" "${_database}" | gzip > ${_backupFile}
+    PGPASSWORD=${_password} pg_dump -Fp -h "${_hostname}" -p "${_port}" -U "${_username}" "${_database}" | gzip > ${_backupFile}
     # Get the status code from pg_dump.  ${?} would provide the status of the last command, gzip in this case.
     _rtnCd=${PIPESTATUS[0]}
 
