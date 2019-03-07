@@ -1128,7 +1128,7 @@ function verifyBackup(){
   )
 }
 
-funtion getFileSize(){
+function getFileSize(){
   (
     _filename=${1}
     echo $(du -h "${_filename}" | awk '{print $1}')
