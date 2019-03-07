@@ -1149,6 +1149,8 @@ function getDbSize(){
 
     _databaseSpec=${1}
     _database=$(getDatabaseName ${_databaseSpec})
+    _username=$(getUsername ${_databaseSpec})
+    _password=$(getPassword ${_databaseSpec})
     if [ -z "${localhost}" ]; then
       _hostname=$(getHostname ${_databaseSpec})
       _port=$(getPort ${_databaseSpec})
@@ -1157,7 +1159,7 @@ function getDbSize(){
       _port="${DEFAULT_PORT}"
     fi
 
-    size=$(psql -h "${_hostname}" -p "${_port}" -d "${_database}" -t -c "SELECT pg_size_pretty(pg_database_size(current_database())) as size;")
+    size=$(PGPASSWORD=${_password} psql -h "${_hostname}" -p "${_port}" -U "${_username}" -d "${_database}" -t -c "SELECT pg_size_pretty(pg_database_size(current_database())) as size;")
     rtnCd=${?}
     echo "${size}"
     return ${rtnCd}
